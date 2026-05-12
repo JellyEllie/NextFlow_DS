@@ -63,6 +63,8 @@ if (params.aligner == 'bwa-mem') {
 }
 if (params.variant_caller == 'haplotype-caller') {
     include { haplotypeCaller } from './modules/haplotypeCaller'
+} else if (params.variant_caller == freebayes) {
+    include { freebayesCaller } from './modules/FreeBayes'
 } else {
     error "Unsupported variant caller: ${params.variant_caller}. Please specify 'haplotype-caller'."
 }
@@ -160,6 +162,10 @@ workflow {
     // Run HaplotypeCaller on BQSR files
     if (params.variant_caller == "haplotype-caller") {
         gvcf_ch = haplotypeCaller(bqsr_ch, indexed_genome_ch.collect()).collect()
+    }
+
+    if (params.variant_caller == "freebayes") {
+        gvcf_ch = freebayesCaller(bqsr_ch, indexed_genome_ch.collect()).collect()
     }
 
     // Now we map to create separate lists for sample IDs, VCF files, and index files
