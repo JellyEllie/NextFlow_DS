@@ -11,6 +11,7 @@ log.info """\
     genome          : ${params.genome_file}
     genome index    : ${params.genome_index_files}
     index genome    : ${params.index_genome}
+    bt2_index_files : ${params.bt2_index_files}
     qsr truth vcfs  : ${params.qsrVcfs}
     output directory: ${params.outdir}
     fastqc          : ${params.fastqc}
@@ -20,6 +21,7 @@ log.info """\
     degraded_dna    : ${params.degraded_dna}
     variant_recalibration: ${params.variant_recalibration}
     identity_analysis: ${params.identity_analysis}
+    fastp           : ${params.fastp}
     ============================================
 """.stripIndent()
 
@@ -29,6 +31,9 @@ if (params.index_genome) {
 }
 if (params.fastqc) {
     include { FASTQC } from './modules/FASTQC'
+}
+if (params.fastp) {
+    include { FASTP } from './modules/FASTP'
 }
 include { sortBam } from './modules/sortBam'
 include { markDuplicates } from './modules/markDuplicates'
@@ -50,6 +55,9 @@ if (params.aligner == 'bwa-mem') {
     include { alignReadsBwaMem } from './modules/alignReadsBwaMem'
 } else if (params.aligner == 'bwa-aln') {
     include { alignReadsBwaAln } from './modules/alignReadsBwaAln'
+} else if (params.aligner == 'bowtie2') {
+    include { alignReadsBowtie2 } from './modules/Bowtie2'
+    include { createBAM } from './modules/Bowtie2'
 } else {
     error "Unsupported aligner: ${params.aligner}. Please specify 'bwa-mem' or 'bwa-aln'."
 }
@@ -98,11 +106,21 @@ workflow {
         FASTQC(read_pairs_ch)
     }
 
+    // Run FASTP on read pairs
+    if (params.fastp) {
+    reads_for_alignment_ch = FASTP(read_pairs_ch)
+    } else {
+    reads_for_alignment_ch = read_pairs_ch
+    }
+
     // Align reads to the indexed genome
-    if (params.aligner == 'bwa-mem') {
-        align_ch = alignReadsBwaMem(read_pairs_ch, indexed_genome_ch.collect())
+        if (params.aligner == 'bwa-mem') {
+        align_ch = alignReadsBwaMem(reads_for_alignment_ch, indexed_genome_ch.collect())
     } else if (params.aligner == 'bwa-aln') {
-        align_ch = alignReadsBwaAln(read_pairs_ch, indexed_genome_ch.collect())
+        align_ch = alignReadsBwaAln(reads_for_alignment_ch, indexed_genome_ch.collect())
+    } else if (params.aligner == 'bowtie2') {
+        align_ch_1 = alignReadsBowtie2(reads_for_alignment_ch, indexed_genome_ch.collect())
+        align_ch = createBAM(align_ch_1)
     }
 
     // Sort BAM files
@@ -251,6 +269,27 @@ workflow FASTQC_only {
 
     if (params.fastqc) {
         FASTQC(read_pairs_ch)
+    }
+}
+
+workflow FASTP_only {
+    // Set channel to gather read_pairs
+    read_pairs_ch = Channel
+        .fromPath(params.samplesheet)
+        .splitCsv(sep: '\t')
+        .map { row ->
+            if (row.size() == 4) {
+                tuple(row[0], [row[1], row[2]])
+            } else if (row.size() == 3) {
+                tuple(row[0], [row[1]])
+            } else {
+                error "Unexpected row format in samplesheet: $row"
+            }
+        }
+    read_pairs_ch.view()
+
+    if (params.fastp) {
+        FASTP(read_pairs_ch)
     }
 }
 
