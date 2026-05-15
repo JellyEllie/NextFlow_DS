@@ -35,6 +35,7 @@ process filterVCF {
     fi
 
     outputVcf="\$(basename ${vcfFile} .vcf)_filtered.vcf"
+    outputVcf2="\$(basename ${vcfFile} .vcf)_filtered_passed_only.vcf"
 
     if [ "$isDegradedDNA" == "true" ]; then
         echo "Running variant filtration for degraded DNA (2 x coverage)"
@@ -47,6 +48,10 @@ process filterVCF {
             --filter-name "LowMQ" --filter-expression "float(MQ) < 60.0" \
             --genotype-filter-name "LowGQ" --genotype-filter-expression "GQ < 30" \
             --set-filtered-genotype-to-no-call
+        
+        gatk SelectVariants -R "\${genomeFasta}" -V "\${outputVcf}" \
+            --exclude-filtered \
+            -O "\${outputVcf2}"
     else
         echo "Running variant filtration for standard DNA (10x+ coverage)"
         gatk VariantFiltration -R "\${genomeFasta}" -V "${vcfFile}" -O "\${outputVcf}" \
@@ -58,6 +63,10 @@ process filterVCF {
             --filter-name "LowMQ" --filter-expression "float(MQ) < 60.0" \
             --genotype-filter-name "LowGQ" --genotype-filter-expression "GQ < 30" \
             --set-filtered-genotype-to-no-call
+
+        gatk SelectVariants -R "\${genomeFasta}" -V "\${outputVcf}" \
+            --exclude-filtered \
+            -O "\${outputVcf2}"
     fi
 
     echo "Variant Filtering for Sample: ${vcfFile} Complete"
